@@ -3,6 +3,48 @@ use std::{
     thread,
 };
 
+use std::{
+    collections::HashMap, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}
+};
+
+mod utils;
+use utils::show_users;
+
+pub fn run_server(address: &str, db: Vec<HashMap<&'static str, String>>) {
+    let listener = TcpListener::bind(address).unwrap();
+    let pool = ThreadPool::new(4);
+
+    let db: Arc<Mutex<Vec<HashMap<&str, String>>>> = Arc::new(Mutex::new(db));
+
+    for stream in listener.incoming() {
+        let stream = stream.unwrap();
+        let database = Arc::clone(&db);
+
+        pool.execute(|| {
+            handle_connection(stream, database);
+        });
+    }
+}
+
+fn handle_connection(mut stream: TcpStream, db: Arc<Mutex<Vec<HashMap<&str, String>>>>) {
+    let buf_reader = BufReader::new(&stream);
+    let request_line = buf_reader.lines().next().unwrap().unwrap();
+    let mut request_data = request_line.split(" ");
+    let method = request_data.next().unwrap();
+    let path = request_data.next().unwrap();
+
+    let (status_line, contents) = match (method, path) {
+        ("GET", "/users") => ("HTTP/1.1 200 OK", show_users(db)),
+        _ => ("HTTP/1.1 404 NOT FOUND", "Not found".to_string()),
+    };
+    let length = contents.len();
+
+    let response =
+        format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
+
+    stream.write_all(response.as_bytes()).unwrap();
+}
+
 pub struct ThreadPool {
     workers: Vec<Worker>,
     sender: Option<mpsc::Sender<Job>>,
