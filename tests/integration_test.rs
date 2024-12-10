@@ -1,7 +1,12 @@
-use std::{io::{Read, Write}, net::{TcpListener, TcpStream}, thread, time::Duration, collections::HashMap};
-use rust_api::run_server;
+use rust_api::{run_server, User};
+use std::{
+    io::{Read, Write},
+    net::TcpStream,
+    thread,
+    time::Duration,
+};
 
-fn get_responce(address: &'static str, db: Vec<HashMap<&'static str, String>>) -> (String, String) {
+fn get_responce(address: &'static str, path: &'static str, db: Vec<User>) -> (String, String) {
     thread::spawn(|| {
         run_server(address, db);
     });
@@ -9,7 +14,7 @@ fn get_responce(address: &'static str, db: Vec<HashMap<&'static str, String>>) -
     thread::sleep(Duration::from_secs(1));
 
     let mut stream = TcpStream::connect(address).unwrap();
-    let request = "GET /users HTTP/1.1\r\nHost: localhost\r\n\r\n";
+    let request = format!("GET {} HTTP/1.1\r\nHost: localhost\r\n\r\n", path);
     stream.write_all(request.as_bytes()).unwrap();
 
     let mut response = String::new();
@@ -19,13 +24,15 @@ fn get_responce(address: &'static str, db: Vec<HashMap<&'static str, String>>) -
     let response_data: Vec<&str> = status_line.split(" ").collect();
     let response_body: Vec<&str> = response.split("\r\n").collect();
 
-    (response_data[1].to_string(), response_body.last().unwrap().to_string())
+    (
+        response_data[1].to_string(),
+        response_body.last().unwrap().to_string(),
+    )
 }
 
 #[test]
 fn test_empty_users() {
-
-    let (code, response) = get_responce("127.0.0.1:7878", Vec::new());
+    let (code, response) = get_responce("127.0.0.1:7878", "/users", Vec::new());
 
     assert_eq!(code, "200".to_string());
     assert_eq!(response, "[]".to_string());
@@ -33,22 +40,64 @@ fn test_empty_users() {
 
 #[test]
 fn test_show_users() {
-    let user_1 = HashMap::from([
-        ("id", "1".to_string()),
-        ("name", "Hlib".to_string()),
-        ("lastname", "Shutov".to_string()),
-    ]);
-    let user_2 = HashMap::from([
-        ("id", "2".to_string()),
-        ("name", "Wojciech".to_string()),
-        ("lastname", "Oczkowski".to_string()),
-    ]);
+    let user_1 = User {
+        id: 1,
+        name: "Hlib".to_string(),
+        lastname: "Shutov".to_string(),
+    };
+    let user_2 = User {
+        id: 2,
+        name: "Wojciech".to_string(),
+        lastname: "Oczkowski".to_string(),
+    };
     let users = vec![user_1, user_2];
 
-    let (code, response) = get_responce("127.0.0.1:7879", users.clone());
+    let (code, response) = get_responce("127.0.0.1:7879", "/users", users.clone());
 
-    let result: Vec<HashMap<&str, String>> = serde_json::from_str(response.as_str()).unwrap();
+    let result: Vec<User> = serde_json::from_str(response.as_str()).unwrap();
 
     assert_eq!(code, "200".to_string());
     assert_eq!(result, users);
+}
+
+#[test]
+fn test_show_user() {
+    let user_1 = User {
+        id: 1,
+        name: "Hlib".to_string(),
+        lastname: "Shutov".to_string(),
+    };
+    let user_2 = User {
+        id: 2,
+        name: "Wojciech".to_string(),
+        lastname: "Oczkowski".to_string(),
+    };
+    let users = vec![user_1.clone(), user_2];
+
+    let (code, response) = get_responce("127.0.0.1:7880", "/users/1", users.clone());
+
+    let result: User = serde_json::from_str(response.as_str()).unwrap();
+
+    assert_eq!(code, "200".to_string());
+    assert_eq!(result, user_1);
+}
+
+#[test]
+fn test_invalid_user_id() {
+    let user_1 = User {
+        id: 1,
+        name: "Hlib".to_string(),
+        lastname: "Shutov".to_string(),
+    };
+    let user_2 = User {
+        id: 2,
+        name: "Wojciech".to_string(),
+        lastname: "Oczkowski".to_string(),
+    };
+    let users = vec![user_1.clone(), user_2];
+
+    let (code, response) = get_responce("127.0.0.1:7881", "/users/test/", users.clone());
+
+    assert_eq!(code, "400".to_string());
+    assert_eq!(response, "Invalid user ID");
 }

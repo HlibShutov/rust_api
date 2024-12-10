@@ -4,17 +4,20 @@ use std::{
 };
 
 use std::{
-    collections::HashMap, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}
+    io::{prelude::*, BufReader},
+    net::{TcpListener, TcpStream},
 };
 
 mod utils;
-use utils::show_users;
+use utils::*;
 
-pub fn run_server(address: &str, db: Vec<HashMap<&'static str, String>>) {
+use serde::{Deserialize, Serialize};
+
+pub fn run_server(address: &str, db: Vec<User>) {
     let listener = TcpListener::bind(address).unwrap();
     let pool = ThreadPool::new(4);
 
-    let db: Arc<Mutex<Vec<HashMap<&str, String>>>> = Arc::new(Mutex::new(db));
+    let db: Arc<Mutex<Vec<User>>> = Arc::new(Mutex::new(db));
 
     for stream in listener.incoming() {
         let stream = stream.unwrap();
@@ -26,7 +29,7 @@ pub fn run_server(address: &str, db: Vec<HashMap<&'static str, String>>) {
     }
 }
 
-fn handle_connection(mut stream: TcpStream, db: Arc<Mutex<Vec<HashMap<&str, String>>>>) {
+fn handle_connection(mut stream: TcpStream, db: Arc<Mutex<Vec<User>>>) {
     let buf_reader = BufReader::new(&stream);
     let request_line = buf_reader.lines().next().unwrap().unwrap();
     let mut request_data = request_line.split(" ");
@@ -35,14 +38,28 @@ fn handle_connection(mut stream: TcpStream, db: Arc<Mutex<Vec<HashMap<&str, Stri
 
     let (status_line, contents) = match (method, path) {
         ("GET", "/users") => ("HTTP/1.1 200 OK", show_users(db)),
+        ("GET", path) if path.starts_with("/users/") => {
+            let id = path.trim_start_matches("/users/");
+            if let Ok(user_id) = id.parse::<u32>() {
+                ("HTTP/1.1 200 OK", show_user(db, user_id))
+            } else {
+                ("HTTP/1.1 400 OK", "Invalid user ID".to_string())
+            }
+        }
         _ => ("HTTP/1.1 404 NOT FOUND", "Not found".to_string()),
     };
     let length = contents.len();
 
-    let response =
-        format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
+    let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
 
     stream.write_all(response.as_bytes()).unwrap();
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct User {
+    pub id: u32,
+    pub name: String,
+    pub lastname: String,
 }
 
 pub struct ThreadPool {
@@ -69,7 +86,10 @@ impl ThreadPool {
             workers.push(Worker::new(id, Arc::clone(&receiver)));
         }
 
-        ThreadPool { workers, sender: Some(sender) }
+        ThreadPool {
+            workers,
+            sender: Some(sender),
+        }
     }
     pub fn execute<F>(&self, f: F)
     where
@@ -111,7 +131,9 @@ impl Worker {
                 }
             }
         });
-        Worker { id, thread: Some(thread) }
+        Worker {
+            id,
+            thread: Some(thread),
+        }
     }
-    
 }
