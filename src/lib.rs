@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     sync::{mpsc, Arc, Mutex},
     thread,
 };
@@ -13,11 +14,9 @@ use utils::*;
 
 use serde::{Deserialize, Serialize};
 
-pub fn run_server(address: &str, db: Vec<User>) {
+pub fn run_server(address: &str, db: Arc<Mutex<Vec<User>>>) {
     let listener = TcpListener::bind(address).unwrap();
     let pool = ThreadPool::new(4);
-
-    let db: Arc<Mutex<Vec<User>>> = Arc::new(Mutex::new(db));
 
     for stream in listener.incoming() {
         let stream = stream.unwrap();
@@ -30,8 +29,30 @@ pub fn run_server(address: &str, db: Vec<User>) {
 }
 
 fn handle_connection(mut stream: TcpStream, db: Arc<Mutex<Vec<User>>>) {
-    let buf_reader = BufReader::new(&stream);
-    let request_line = buf_reader.lines().next().unwrap().unwrap();
+    let mut buf_reader = BufReader::new(&stream);
+    let mut request = String::new();
+
+    loop {
+        let mut line = String::new();
+        buf_reader.read_line(&mut line).unwrap();
+        if line == "\r\n" {
+            break;
+        }
+        request.push_str(&line);
+    }
+
+    let content_length = request
+        .lines()
+        .find(|line| line.starts_with("Content-Length:"))
+        .and_then(|line| line.split(" ").nth(1))
+        .and_then(|len| len.parse::<usize>().ok())
+        .unwrap_or(0);
+
+    let mut body = vec![0; content_length];
+    buf_reader.read_exact(&mut body).unwrap();
+    let data = String::from_utf8(body).unwrap();
+
+    let request_line = request.split("\r\n").next().unwrap();
     let mut request_data = request_line.split(" ");
     let method = request_data.next().unwrap();
     let path = request_data.next().unwrap();
@@ -45,6 +66,13 @@ fn handle_connection(mut stream: TcpStream, db: Arc<Mutex<Vec<User>>>) {
             } else {
                 ("HTTP/1.1 400 OK", "Invalid user ID".to_string())
             }
+        }
+        ("POST", "/users") => {
+            println!("{}", data);
+            let user: HashMap<String, String> = serde_json::from_str(data.as_str()).unwrap();
+            println!("{:?}", user);
+            let id = add_user(db, user.get("name").unwrap(), user.get("lastname").unwrap());
+            ("HTTP/1.1 201 OK", format!("{}", id))
         }
         _ => ("HTTP/1.1 404 NOT FOUND", "Not found".to_string()),
     };
