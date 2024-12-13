@@ -8,6 +8,20 @@ use std::{
     time::Duration,
 };
 
+fn create_users() -> Vec<User> {
+    let user_1 = User {
+        id: 1,
+        name: "Hlib".to_string(),
+        lastname: "Shutov".to_string(),
+    };
+    let user_2 = User {
+        id: 2,
+        name: "Wojciech".to_string(),
+        lastname: "Oczkowski".to_string(),
+    };
+    vec![user_1, user_2]
+}
+
 fn get_responce(
     address: &'static str,
     path: &str,
@@ -58,18 +72,7 @@ fn test_empty_users() {
 
 #[test]
 fn test_show_users() {
-    let user_1 = User {
-        id: 1,
-        name: "Hlib".to_string(),
-        lastname: "Shutov".to_string(),
-    };
-    let user_2 = User {
-        id: 2,
-        name: "Wojciech".to_string(),
-        lastname: "Oczkowski".to_string(),
-    };
-    let users = vec![user_1, user_2];
-
+    let users = create_users();
     let (code, response, _) = get_responce("127.0.0.1:7879", "/users", "GET", "", users.clone());
 
     let result: Vec<User> = serde_json::from_str(response.as_str()).unwrap();
@@ -85,12 +88,7 @@ fn test_show_user() {
         name: "Hlib".to_string(),
         lastname: "Shutov".to_string(),
     };
-    let user_2 = User {
-        id: 2,
-        name: "Wojciech".to_string(),
-        lastname: "Oczkowski".to_string(),
-    };
-    let users = vec![user_1.clone(), user_2];
+    let users = create_users();
 
     let (code, response, _) = get_responce("127.0.0.1:7880", "/users/1", "GET", "", users);
 
@@ -102,42 +100,22 @@ fn test_show_user() {
 
 #[test]
 fn test_invalid_user_id() {
-    let user_1 = User {
-        id: 1,
-        name: "Hlib".to_string(),
-        lastname: "Shutov".to_string(),
-    };
-    let user_2 = User {
-        id: 2,
-        name: "Wojciech".to_string(),
-        lastname: "Oczkowski".to_string(),
-    };
-    let users = vec![user_1.clone(), user_2];
-
+    let users = create_users();
     let (code, response, _) = get_responce("127.0.0.1:7881", "/users/test/", "GET", "", users);
 
     assert_eq!(code, "400".to_string());
-    assert_eq!(response, "Invalid user ID");
+    assert_eq!(response, "Invalid input");
 }
 
 #[test]
 fn test_adding_user() {
-    let user_1 = User {
-        id: 1,
-        name: "Hlib".to_string(),
-        lastname: "Shutov".to_string(),
-    };
-    let user_2 = User {
-        id: 2,
-        name: "Wojciech".to_string(),
-        lastname: "Oczkowski".to_string(),
-    };
+    let users = create_users();
+
     let user_3 = User {
         id: 3,
         name: "Wojciech".to_string(),
         lastname: "Oczkowski".to_string(),
     };
-    let users = vec![user_1.clone(), user_2];
 
     let body = json!({
         "name": "Wojciech",
@@ -151,4 +129,77 @@ fn test_adding_user() {
     assert_eq!(code, "201".to_string());
     assert_eq!(response, "3");
     assert_eq!(db[2], user_3);
+}
+
+#[test]
+fn test_adding_user_invalid_data() {
+    let users = create_users();
+
+    let (code, response, _) = get_responce("127.0.0.1:7883", "/users", "POST", "test", users);
+
+    assert_eq!(code, "400".to_string());
+    assert_eq!(response, "Invalid input");
+}
+#[test]
+fn test_change_user_name() {
+    let users = create_users();
+
+    let body = json!({
+        "name": "Test",
+    })
+    .to_string();
+
+    let (code, _, db) = get_responce("127.0.0.1:7884", "/users/1", "PATCH", body.as_str(), users);
+
+    assert_eq!(code, "204".to_string());
+    assert_eq!(
+        *db.get(0).unwrap(),
+        User {
+            id: 1,
+            name: "Test".to_string(),
+            lastname: "Shutov".to_string()
+        }
+    );
+}
+
+#[test]
+fn test_change_user_name_invalid_id() {
+    let users = create_users();
+
+    let body = json!({
+        "name": "Test",
+    })
+    .to_string();
+
+    let (code, response, _) =
+        get_responce("127.0.0.1:7885", "/users/5", "PATCH", body.as_str(), users);
+
+    assert_eq!(code, "400".to_string());
+    assert_eq!(response, "Invalid input".to_string());
+}
+
+#[test]
+fn test_change_user_name_invalid_body() {
+    let users = create_users();
+
+    let body = json!({
+        "test": "Test",
+    })
+    .to_string();
+
+    let (code, response, _) =
+        get_responce("127.0.0.1:7886", "/users/5", "PATCH", body.as_str(), users);
+
+    assert_eq!(code, "400".to_string());
+    assert_eq!(response, "Invalid input".to_string());
+}
+
+#[test]
+fn test_change_user_name_invalid_body_json() {
+    let users = create_users();
+
+    let (code, response, _) = get_responce("127.0.0.1:7887", "/users/5", "PATCH", "test", users);
+
+    assert_eq!(code, "400".to_string());
+    assert_eq!(response, "Invalid input".to_string());
 }

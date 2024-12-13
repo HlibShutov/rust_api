@@ -57,24 +57,60 @@ fn handle_connection(mut stream: TcpStream, db: Arc<Mutex<Vec<User>>>) {
     let method = request_data.next().unwrap();
     let path = request_data.next().unwrap();
 
-    let (status_line, contents) = match (method, path) {
-        ("GET", "/users") => ("HTTP/1.1 200 OK", show_users(db)),
+    let (code, contents) = match (method, path) {
+        ("GET", "/users") => (Some(200), show_users(db)),
         ("GET", path) if path.starts_with("/users/") => {
             let id = path.trim_start_matches("/users/");
             if let Ok(user_id) = id.parse::<u32>() {
-                ("HTTP/1.1 200 OK", show_user(db, user_id))
+                (Some(200), show_user(db, user_id))
             } else {
-                ("HTTP/1.1 400 OK", "Invalid user ID".to_string())
+                (None, Err(Errors::UserError(400)))
             }
         }
         ("POST", "/users") => {
             println!("{}", data);
-            let user: HashMap<String, String> = serde_json::from_str(data.as_str()).unwrap();
-            println!("{:?}", user);
-            let id = add_user(db, user.get("name").unwrap(), user.get("lastname").unwrap());
-            ("HTTP/1.1 201 OK", format!("{}", id))
+            match serde_json::from_str::<HashMap<String, String>>(data.as_str()) {
+                Ok(user) => {
+                    let id = add_user(db, user.get("name").unwrap(), user.get("lastname").unwrap());
+                    (Some(201), id)
+                }
+                Err(_) => (None, Err(Errors::UserError(400))),
+            }
         }
-        _ => ("HTTP/1.1 404 NOT FOUND", "Not found".to_string()),
+        ("PATCH", path) if path.starts_with("/users/") => {
+            let id = path.trim_start_matches("/users/");
+            if let Ok(user_id) = id.parse::<u32>() {
+                match serde_json::from_str::<HashMap<String, String>>(data.as_str()) {
+                    Ok(user) => {
+                        if user.len() != 1 {
+                            (None, Err(Errors::UserError(400)))
+                        } else {
+                            (Some(204), change_user_data(db, user_id, user))
+                        }
+                    }
+                    Err(_) => (None, Err(Errors::UserError(400))),
+                }
+            } else {
+                (None, Err(Errors::UserError(400)))
+            }
+        }
+        _ => (None, Err(Errors::UserError(404))),
+    };
+
+    let (status_line, contents) = match contents {
+        Ok(data) => (format!("HTTP/1.1 {}", code.unwrap()), data),
+        Err(Errors::ServerError(code)) => (
+            format!("HTTP/1.1 {}", code),
+            "Internal serve error".to_string(),
+        ),
+        Err(Errors::UserError(code)) => (
+            format!("HTTP/1.1 {}", code),
+            match code {
+                400 => "Invalid input".to_string(),
+                404 => "Not found".to_string(),
+                _ => "User error".to_string(),
+            },
+        ),
     };
     let length = contents.len();
 
