@@ -188,7 +188,7 @@ fn test_change_user_name_invalid_body() {
     .to_string();
 
     let (code, response, _) =
-        get_responce("127.0.0.1:7886", "/users/5", "PATCH", body.as_str(), users);
+        get_responce("127.0.0.1:7886", "/users/1", "PATCH", body.as_str(), users);
 
     assert_eq!(code, "400".to_string());
     assert_eq!(response, "Invalid input".to_string());
@@ -198,7 +198,79 @@ fn test_change_user_name_invalid_body() {
 fn test_change_user_name_invalid_body_json() {
     let users = create_users();
 
-    let (code, response, _) = get_responce("127.0.0.1:7887", "/users/5", "PATCH", "test", users);
+    let (code, response, _) = get_responce("127.0.0.1:7887", "/users/1", "PATCH", "test", users);
+
+    assert_eq!(code, "400".to_string());
+    assert_eq!(response, "Invalid input".to_string());
+}
+
+#[test]
+fn test_modify_user() {
+    let users = create_users();
+    let body = json!({
+        "name": "Test",
+        "lastname": "Test1",
+    })
+    .to_string();
+
+    let (code, response, db) =
+        get_responce("127.0.0.1:7888", "/users/1", "PUT", body.as_str(), users);
+
+    let user = User {
+        id: 1,
+        name: "Test".to_string(),
+        lastname: "Test1".to_string(),
+    };
+
+    assert_eq!(code, "204".to_string());
+    assert_eq!(response, "Modified user".to_string());
+    assert_eq!(*db.get(0).unwrap(), user);
+}
+
+#[test]
+fn test_creates_user() {
+    let users = create_users();
+    let body = json!({
+        "name": "Test",
+        "lastname": "Test1",
+    })
+    .to_string();
+
+    let (code, response, db) =
+        get_responce("127.0.0.1:7889", "/users/3", "PUT", body.as_str(), users);
+
+    let user = User {
+        id: 3,
+        name: "Test".to_string(),
+        lastname: "Test1".to_string(),
+    };
+
+    assert_eq!(code, "204".to_string());
+    assert_eq!(response, "Created new user".to_string());
+    assert_eq!(*db.get(2).unwrap(), user);
+}
+
+#[test]
+fn test_modify_or_create_user_return_error_invalid_json() {
+    let users = create_users();
+    let body = json!({
+        "name1": "Test",
+        "lastname": "Test1",
+    })
+    .to_string();
+
+    let (code, response, _) =
+        get_responce("127.0.0.1:7890", "/users/3", "PUT", body.as_str(), users);
+
+    assert_eq!(code, "400".to_string());
+    assert_eq!(response, "Invalid input".to_string());
+}
+
+#[test]
+fn test_modify_or_create_user_return_error_invalid_body() {
+    let users = create_users();
+
+    let (code, response, _) = get_responce("127.0.0.1:7891", "/users/3", "PUT", "fesfef", users);
 
     assert_eq!(code, "400".to_string());
     assert_eq!(response, "Invalid input".to_string());

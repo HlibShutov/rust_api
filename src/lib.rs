@@ -71,7 +71,7 @@ fn handle_connection(mut stream: TcpStream, db: Arc<Mutex<Vec<User>>>) {
             println!("{}", data);
             match serde_json::from_str::<HashMap<String, String>>(data.as_str()) {
                 Ok(user) => {
-                    let id = add_user(db, user.get("name").unwrap(), user.get("lastname").unwrap());
+                    let id = add_user(db, user, None);
                     (Some(201), id)
                 }
                 Err(_) => (None, Err(Errors::UserError(400))),
@@ -86,6 +86,23 @@ fn handle_connection(mut stream: TcpStream, db: Arc<Mutex<Vec<User>>>) {
                             (None, Err(Errors::UserError(400)))
                         } else {
                             (Some(204), change_user_data(db, user_id, user))
+                        }
+                    }
+                    Err(_) => (None, Err(Errors::UserError(400))),
+                }
+            } else {
+                (None, Err(Errors::UserError(400)))
+            }
+        }
+        ("PUT", path) if path.starts_with("/users/") => {
+            let id = path.trim_start_matches("/users/");
+            if let Ok(user_id) = id.parse::<u32>() {
+                match serde_json::from_str::<HashMap<String, String>>(data.as_str()) {
+                    Ok(data) => {
+                        if data.len() != 2 {
+                            (None, Err(Errors::UserError(400)))
+                        } else {
+                            (Some(204), add_or_modify_user(db, user_id, data))
                         }
                     }
                     Err(_) => (None, Err(Errors::UserError(400))),

@@ -27,22 +27,31 @@ pub fn show_user(db: Arc<Mutex<Vec<User>>>, id: u32) -> Result<String, Errors> {
     json
 }
 
-pub fn add_user(db: Arc<Mutex<Vec<User>>>, name: &str, lastname: &str) -> Result<String, Errors> {
+pub fn add_user(
+    db: Arc<Mutex<Vec<User>>>,
+    data: HashMap<String, String>,
+    new_id: Option<u32>,
+) -> Result<String, Errors> {
     let mut users = db.lock().map_err(|_| Errors::ServerError(500))?;
     let last_user = users.last();
-    let id = if let Some(last_user) = last_user {
+    let id = new_id.unwrap_or(if let Some(last_user) = last_user {
         last_user.id + 1
     } else {
         0
-    };
-    let user = User {
-        id,
-        name: name.to_string(),
-        lastname: lastname.to_string(),
-    };
-    users.push(user);
+    });
 
-    Ok(format!("{}", id))
+    if data.contains_key("name") && data.contains_key("lastname") {
+        let user = User {
+            id,
+            name: data.get("name").unwrap().to_string(),
+            lastname: data.get("lastname").unwrap().to_string(),
+        };
+        users.push(user);
+
+        Ok(format!("{}", id))
+    } else {
+        Err(Errors::UserError(400))
+    }
 }
 
 pub fn change_user_data(
@@ -51,7 +60,7 @@ pub fn change_user_data(
     change_data: HashMap<String, String>,
 ) -> Result<String, Errors> {
     let keys: Vec<_> = change_data.keys().collect();
-    let mut users = db.lock().unwrap();
+    let mut users = db.lock().map_err(|_| Errors::ServerError(500))?;
     let user = users
         .iter_mut()
         .find(|user| user.id == id)
@@ -62,6 +71,29 @@ pub fn change_user_data(
         _ => return Err(Errors::UserError(400)),
     };
     Ok("".to_string())
+}
+
+pub fn add_or_modify_user(
+    db: Arc<Mutex<Vec<User>>>,
+    id: u32,
+    data: HashMap<String, String>,
+) -> Result<String, Errors> {
+    if data.contains_key("name") && data.contains_key("lastname") {
+        {
+            let mut users = db.lock().map_err(|_| Errors::ServerError(500))?;
+
+            if let Some(user) = users.iter_mut().find(|user| user.id == id) {
+                user.name = data.get("name").unwrap().to_string();
+                user.lastname = data.get("lastname").unwrap().to_string();
+                return Ok("Modified user".to_string());
+            }
+        }
+
+        add_user(db, data, Some(id))?;
+        return Ok("Created new user".to_string());
+    } else {
+        Err(Errors::UserError(400))
+    }
 }
 
 #[cfg(test)]
@@ -103,7 +135,11 @@ mod tests {
     #[test]
     fn test_adds_user_to_the_end() {
         let (_, db) = create_db();
-        let output = add_user(db.clone(), "Test", "Test1");
+        let data = HashMap::from([
+            ("name".to_string(), "Test".to_string()),
+            ("lastname".to_string(), "Test1".to_string()),
+        ]);
+        let output = add_user(db.clone(), data, None);
 
         let new_users = db.lock().unwrap();
         let last_user = new_users.last().unwrap();
@@ -122,7 +158,11 @@ mod tests {
     fn test_adds_user_to_empty() {
         let users = Vec::new();
         let db = Arc::new(Mutex::new(users));
-        let output = add_user(db.clone(), "Test", "Test1");
+        let data = HashMap::from([
+            ("name".to_string(), "Test".to_string()),
+            ("lastname".to_string(), "Test1".to_string()),
+        ]);
+        let output = add_user(db.clone(), data, None);
 
         let new_users = db.lock().unwrap();
         let last_user = new_users.last().unwrap();
@@ -163,9 +203,9 @@ mod tests {
         let _ = change_user_data(db.clone(), 1, change_data);
 
         let new_users = db.lock().unwrap();
-        let last_user = new_users.get(0).unwrap();
+        let user = new_users.get(0).unwrap();
         assert_eq!(
-            *last_user,
+            *user,
             User {
                 id: 1,
                 name: "Hlib".to_string(),
@@ -180,6 +220,63 @@ mod tests {
         let change_data = HashMap::from([("lastname".to_string(), "Test".to_string())]);
         let output = change_user_data(db.clone(), 5, change_data);
 
+        assert_eq!(output, Err(Errors::UserError(400)));
+    }
+
+    #[test]
+    fn test_modify_user() {
+        let (_, db) = create_db();
+        let data = HashMap::from([
+            ("name".to_string(), "test".to_string()),
+            ("lastname".to_string(), "test1".to_string()),
+        ]);
+        let output = add_or_modify_user(db.clone(), 1, data);
+
+        let new_users = db.lock().unwrap();
+        let user = new_users.get(0).unwrap();
+
+        assert_eq!(
+            *user,
+            User {
+                id: 1,
+                name: "test".to_string(),
+                lastname: "test1".to_string()
+            }
+        );
+        assert_eq!(output, Ok("Modified user".to_string()));
+    }
+
+    #[test]
+    fn test_creates_new_user() {
+        let (_, db) = create_db();
+        let data = HashMap::from([
+            ("name".to_string(), "test".to_string()),
+            ("lastname".to_string(), "test1".to_string()),
+        ]);
+        let output = add_or_modify_user(db.clone(), 3, data);
+
+        let new_users = db.lock().unwrap();
+        let user = new_users.last().unwrap();
+
+        assert_eq!(
+            *user,
+            User {
+                id: 3,
+                name: "test".to_string(),
+                lastname: "test1".to_string()
+            }
+        );
+        assert_eq!(output, Ok("Created new user".to_string()));
+    }
+
+    #[test]
+    fn test_add_or_modify_user_returns_error_when_incorrect_data() {
+        let (_, db) = create_db();
+        let data = HashMap::from([
+            ("test".to_string(), "test".to_string()),
+            ("lastname".to_string(), "test1".to_string()),
+        ]);
+        let output = add_or_modify_user(db.clone(), 3, data);
         assert_eq!(output, Err(Errors::UserError(400)));
     }
 }
