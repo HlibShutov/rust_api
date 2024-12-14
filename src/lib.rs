@@ -111,6 +111,14 @@ fn handle_connection(mut stream: TcpStream, db: Arc<Mutex<Vec<User>>>) {
                 (None, Err(Errors::UserError(400)))
             }
         }
+        ("DELETE", path) if path.starts_with("/users/") => {
+            let id = path.trim_start_matches("/users/");
+            if let Ok(user_id) = id.parse::<u32>() {
+                (Some(204), delete_user(db, user_id))
+            } else {
+                (None, Err(Errors::UserError(400)))
+            }
+        }
         _ => (None, Err(Errors::UserError(404))),
     };
 

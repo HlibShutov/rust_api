@@ -271,3 +271,30 @@ fn test_modify_or_create_user_return_error_invalid_body() {
     assert_eq!(code, "400".to_string());
     assert_eq!(response, "Invalid input".to_string());
 }
+
+#[test]
+fn test_delete_user() {
+    let users = create_users();
+
+    let (code, response, db) = get_responce("127.0.0.1:7892", "/users/2", "DELETE", "", users);
+
+    let expected_db = vec![User {
+        id: 1,
+        name: "Hlib".to_string(),
+        lastname: "Shutov".to_string(),
+    }];
+
+    assert_eq!(code, "204".to_string());
+    assert_eq!(response, "Removed user".to_string());
+    assert_eq!(db, expected_db);
+}
+
+#[test]
+fn test_delete_user_invalid_id() {
+    let users = create_users();
+
+    let (code, response, _) = get_responce("127.0.0.1:7893", "/users/3", "DELETE", "", users);
+
+    assert_eq!(code, "400".to_string());
+    assert_eq!(response, "Invalid input".to_string());
+}

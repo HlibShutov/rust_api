@@ -70,7 +70,7 @@ pub fn change_user_data(
         "lastname" => user.lastname = change_data.get("lastname").unwrap().to_string(),
         _ => return Err(Errors::UserError(400)),
     };
-    Ok("".to_string())
+    Ok("Changed".to_string())
 }
 
 pub fn add_or_modify_user(
@@ -94,6 +94,16 @@ pub fn add_or_modify_user(
     } else {
         Err(Errors::UserError(400))
     }
+}
+
+pub fn delete_user(db: Arc<Mutex<Vec<User>>>, id: u32) -> Result<String, Errors> {
+    let mut users = db.lock().map_err(|_| Errors::ServerError(500))?;
+    let user = users
+        .iter_mut()
+        .position(|user| user.id == id)
+        .ok_or(Errors::UserError(400))?;
+    users.remove(user);
+    Ok("Removed user".to_string())
 }
 
 #[cfg(test)]
@@ -175,10 +185,12 @@ mod tests {
         let (_, db) = create_db();
 
         let change_data = HashMap::from([("name".to_string(), "test".to_string())]);
-        let _ = change_user_data(db.clone(), 1, change_data);
+        let result = change_user_data(db.clone(), 1, change_data);
 
         let new_users = db.lock().unwrap();
         let last_user = new_users.get(0).unwrap();
+
+        assert_eq!(result, Ok("Changed".to_string()));
         assert_eq!(
             *last_user,
             User {
@@ -193,10 +205,12 @@ mod tests {
     fn test_change_user_lastname() {
         let (_, db) = create_db();
         let change_data = HashMap::from([("lastname".to_string(), "test1".to_string())]);
-        let _ = change_user_data(db.clone(), 1, change_data);
+        let result = change_user_data(db.clone(), 1, change_data);
 
         let new_users = db.lock().unwrap();
         let user = new_users.get(0).unwrap();
+
+        assert_eq!(result, Ok("Changed".to_string()));
         assert_eq!(
             *user,
             User {
@@ -257,5 +271,23 @@ mod tests {
         ]);
         let output = add_or_modify_user(db.clone(), 3, data);
         assert_eq!(output, Err(Errors::UserError(400)));
+    }
+
+    #[test]
+    fn test_delete_user() {
+        let (_, db) = create_db();
+        let result = delete_user(db.clone(), 2);
+
+        let users = db.lock().unwrap();
+
+        assert_eq!(result, Ok("Removed user".to_string()));
+        assert_eq!(
+            *users,
+            vec!(User {
+                id: 1,
+                name: "Hlib".to_string(),
+                lastname: "Shutov".to_string()
+            })
+        );
     }
 }
