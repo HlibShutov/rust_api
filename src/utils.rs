@@ -100,6 +100,13 @@ pub fn add_or_modify_user(
 mod tests {
     use super::*;
 
+    fn create_user(id: u32) -> User {
+        User {
+            id,
+            name: "test".to_string(),
+            lastname: "test1".to_string(),
+        }
+    }
     fn create_db() -> (Vec<User>, Arc<Mutex<Vec<User>>>) {
         let user_1 = User {
             id: 1,
@@ -136,22 +143,15 @@ mod tests {
     fn test_adds_user_to_the_end() {
         let (_, db) = create_db();
         let data = HashMap::from([
-            ("name".to_string(), "Test".to_string()),
-            ("lastname".to_string(), "Test1".to_string()),
+            ("name".to_string(), "test".to_string()),
+            ("lastname".to_string(), "test1".to_string()),
         ]);
         let output = add_user(db.clone(), data, None);
 
         let new_users = db.lock().unwrap();
         let last_user = new_users.last().unwrap();
         assert_eq!(output.unwrap(), "3".to_string());
-        assert_eq!(
-            *last_user,
-            User {
-                id: 3,
-                name: "Test".to_string(),
-                lastname: "Test1".to_string()
-            }
-        );
+        assert_eq!(*last_user, create_user(3));
     }
 
     #[test]
@@ -159,29 +159,22 @@ mod tests {
         let users = Vec::new();
         let db = Arc::new(Mutex::new(users));
         let data = HashMap::from([
-            ("name".to_string(), "Test".to_string()),
-            ("lastname".to_string(), "Test1".to_string()),
+            ("name".to_string(), "test".to_string()),
+            ("lastname".to_string(), "test1".to_string()),
         ]);
         let output = add_user(db.clone(), data, None);
 
         let new_users = db.lock().unwrap();
         let last_user = new_users.last().unwrap();
         assert_eq!(output.unwrap(), "0".to_string());
-        assert_eq!(
-            *last_user,
-            User {
-                id: 0,
-                name: "Test".to_string(),
-                lastname: "Test1".to_string()
-            }
-        );
+        assert_eq!(*last_user, create_user(0));
     }
 
     #[test]
     fn test_change_user_name() {
         let (_, db) = create_db();
 
-        let change_data = HashMap::from([("name".to_string(), "Test".to_string())]);
+        let change_data = HashMap::from([("name".to_string(), "test".to_string())]);
         let _ = change_user_data(db.clone(), 1, change_data);
 
         let new_users = db.lock().unwrap();
@@ -190,7 +183,7 @@ mod tests {
             *last_user,
             User {
                 id: 1,
-                name: "Test".to_string(),
+                name: "test".to_string(),
                 lastname: "Shutov".to_string()
             }
         );
@@ -199,7 +192,7 @@ mod tests {
     #[test]
     fn test_change_user_lastname() {
         let (_, db) = create_db();
-        let change_data = HashMap::from([("lastname".to_string(), "Test".to_string())]);
+        let change_data = HashMap::from([("lastname".to_string(), "test1".to_string())]);
         let _ = change_user_data(db.clone(), 1, change_data);
 
         let new_users = db.lock().unwrap();
@@ -209,7 +202,7 @@ mod tests {
             User {
                 id: 1,
                 name: "Hlib".to_string(),
-                lastname: "Test".to_string()
+                lastname: "test1".to_string()
             }
         );
     }
@@ -217,7 +210,7 @@ mod tests {
     #[test]
     fn test_returns_error_if_not_exists() {
         let (_, db) = create_db();
-        let change_data = HashMap::from([("lastname".to_string(), "Test".to_string())]);
+        let change_data = HashMap::from([("lastname".to_string(), "test1".to_string())]);
         let output = change_user_data(db.clone(), 5, change_data);
 
         assert_eq!(output, Err(Errors::UserError(400)));
@@ -235,14 +228,7 @@ mod tests {
         let new_users = db.lock().unwrap();
         let user = new_users.get(0).unwrap();
 
-        assert_eq!(
-            *user,
-            User {
-                id: 1,
-                name: "test".to_string(),
-                lastname: "test1".to_string()
-            }
-        );
+        assert_eq!(*user, create_user(1));
         assert_eq!(output, Ok("Modified user".to_string()));
     }
 
@@ -258,14 +244,7 @@ mod tests {
         let new_users = db.lock().unwrap();
         let user = new_users.last().unwrap();
 
-        assert_eq!(
-            *user,
-            User {
-                id: 3,
-                name: "test".to_string(),
-                lastname: "test1".to_string()
-            }
-        );
+        assert_eq!(*user, create_user(3));
         assert_eq!(output, Ok("Created new user".to_string()));
     }
 

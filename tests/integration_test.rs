@@ -83,12 +83,8 @@ fn test_show_users() {
 
 #[test]
 fn test_show_user() {
-    let user_1 = User {
-        id: 1,
-        name: "Hlib".to_string(),
-        lastname: "Shutov".to_string(),
-    };
     let users = create_users();
+    let user_1 = users[0].clone();
 
     let (code, response, _) = get_responce("127.0.0.1:7880", "/users/1", "GET", "", users);
 
@@ -113,13 +109,13 @@ fn test_adding_user() {
 
     let user_3 = User {
         id: 3,
-        name: "Wojciech".to_string(),
-        lastname: "Oczkowski".to_string(),
+        name: "test".to_string(),
+        lastname: "test1".to_string(),
     };
 
     let body = json!({
-        "name": "Wojciech",
-        "lastname": "Oczkowski",
+        "name": "test",
+        "lastname": "test1",
     })
     .to_string();
 
@@ -208,8 +204,8 @@ fn test_change_user_name_invalid_body_json() {
 fn test_modify_user() {
     let users = create_users();
     let body = json!({
-        "name": "Test",
-        "lastname": "Test1",
+        "name": "test",
+        "lastname": "test1",
     })
     .to_string();
 
@@ -218,8 +214,8 @@ fn test_modify_user() {
 
     let user = User {
         id: 1,
-        name: "Test".to_string(),
-        lastname: "Test1".to_string(),
+        name: "test".to_string(),
+        lastname: "test1".to_string(),
     };
 
     assert_eq!(code, "204".to_string());
