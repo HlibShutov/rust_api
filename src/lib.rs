@@ -9,12 +9,14 @@ use std::{
     net::{TcpListener, TcpStream},
 };
 
+pub mod db_object;
 mod utils;
+use db_object::DataBase;
 use utils::*;
 
 use serde::{Deserialize, Serialize};
 
-pub fn run_server(address: &str, db: Arc<Mutex<Vec<User>>>) {
+pub fn run_server(address: &str, db: Arc<Mutex<DataBase>>) {
     let listener = TcpListener::bind(address).unwrap();
     let pool = ThreadPool::new(4);
 
@@ -28,7 +30,7 @@ pub fn run_server(address: &str, db: Arc<Mutex<Vec<User>>>) {
     }
 }
 
-fn handle_connection(mut stream: TcpStream, db: Arc<Mutex<Vec<User>>>) {
+fn handle_connection(mut stream: TcpStream, db: Arc<Mutex<DataBase>>) {
     let mut buf_reader = BufReader::new(&stream);
     let mut request = String::new();
 
@@ -81,30 +83,7 @@ fn handle_connection(mut stream: TcpStream, db: Arc<Mutex<Vec<User>>>) {
             let id = path.trim_start_matches("/users/");
             if let Ok(user_id) = id.parse::<u32>() {
                 match serde_json::from_str::<HashMap<String, String>>(data.as_str()) {
-                    Ok(user) => {
-                        if user.len() != 1 {
-                            (None, Err(Errors::UserError(400)))
-                        } else {
-                            (Some(204), change_user_data(db, user_id, user))
-                        }
-                    }
-                    Err(_) => (None, Err(Errors::UserError(400))),
-                }
-            } else {
-                (None, Err(Errors::UserError(400)))
-            }
-        }
-        ("PUT", path) if path.starts_with("/users/") => {
-            let id = path.trim_start_matches("/users/");
-            if let Ok(user_id) = id.parse::<u32>() {
-                match serde_json::from_str::<HashMap<String, String>>(data.as_str()) {
-                    Ok(data) => {
-                        if data.len() != 2 {
-                            (None, Err(Errors::UserError(400)))
-                        } else {
-                            (Some(204), add_or_modify_user(db, user_id, data))
-                        }
-                    }
+                    Ok(user) => (Some(204), change_user_data(db, user_id, user)),
                     Err(_) => (None, Err(Errors::UserError(400))),
                 }
             } else {
@@ -149,6 +128,15 @@ pub struct User {
     pub id: u32,
     pub name: String,
     pub lastname: String,
+    pub birth_year: u16,
+    pub group: UserGroup,
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub enum UserGroup {
+    User,
+    Premium,
+    Admin,
 }
 
 pub struct ThreadPool {

@@ -1,4 +1,4 @@
-use rust_api::{run_server, User};
+use rust_api::{db_object::DataBase, run_server, User, UserGroup};
 use serde_json::json;
 use std::{
     io::{Read, Write},
@@ -8,18 +8,24 @@ use std::{
     time::Duration,
 };
 
-fn create_users() -> Vec<User> {
+fn create_users() -> DataBase {
     let user_1 = User {
         id: 1,
         name: "Hlib".to_string(),
         lastname: "Shutov".to_string(),
+        birth_year: 2000,
+        group: crate::UserGroup::Admin,
     };
     let user_2 = User {
         id: 2,
         name: "Wojciech".to_string(),
         lastname: "Oczkowski".to_string(),
+        birth_year: 2000,
+        group: crate::UserGroup::User,
     };
-    vec![user_1, user_2]
+    DataBase {
+        db: vec![user_1, user_2],
+    }
 }
 
 fn get_responce(
@@ -27,8 +33,8 @@ fn get_responce(
     path: &str,
     method: &str,
     body: &str,
-    db: Vec<User>,
-) -> (String, String, Vec<User>) {
+    db: DataBase,
+) -> (String, String, DataBase) {
     let db = Arc::new(Mutex::new(db));
     let server_db = Arc::clone(&db);
     thread::spawn(|| {
@@ -54,17 +60,17 @@ fn get_responce(
     let response_data: Vec<&str> = status_line.split(" ").collect();
     let response_body: Vec<&str> = response.split("\r\n").collect();
 
-    let db = db.lock().unwrap().to_vec();
+    let db = db.lock().unwrap();
     (
         response_data[1].to_string(),
         response_body.last().unwrap().to_string(),
-        db,
+        db.clone(),
     )
 }
 
 #[test]
 fn test_empty_users() {
-    let (code, response, _) = get_responce("127.0.0.1:7878", "/users", "GET", "", Vec::new());
+    let (code, response, _) = get_responce("127.0.0.1:7878", "/users", "GET", "", DataBase::new());
 
     assert_eq!(code, "200".to_string());
     assert_eq!(response, "[]".to_string());
@@ -78,13 +84,13 @@ fn test_show_users() {
     let result: Vec<User> = serde_json::from_str(response.as_str()).unwrap();
 
     assert_eq!(code, "200".to_string());
-    assert_eq!(result, users);
+    assert_eq!(result, users.db);
 }
 
 #[test]
 fn test_show_user() {
     let users = create_users();
-    let user_1 = users[0].clone();
+    let user_1 = users.db[0].clone();
 
     let (code, response, _) = get_responce("127.0.0.1:7880", "/users/1", "GET", "", users);
 
@@ -111,11 +117,15 @@ fn test_adding_user() {
         id: 3,
         name: "test".to_string(),
         lastname: "test1".to_string(),
+        birth_year: 2025,
+        group: UserGroup::Premium,
     };
 
     let body = json!({
         "name": "test",
         "lastname": "test1",
+        "birth_year": "2025",
+        "group": "premium",
     })
     .to_string();
 
@@ -124,7 +134,35 @@ fn test_adding_user() {
 
     assert_eq!(code, "201".to_string());
     assert_eq!(response, "3");
-    assert_eq!(db[2], user_3);
+    assert_eq!(db.db[2], user_3);
+}
+
+#[test]
+fn test_adding_user_to_empty() {
+    let users = DataBase::new();
+
+    let user = User {
+        id: 0,
+        name: "test".to_string(),
+        lastname: "test1".to_string(),
+        birth_year: 2025,
+        group: UserGroup::Premium,
+    };
+
+    let body = json!({
+        "name": "test",
+        "lastname": "test1",
+        "birth_year": "2025",
+        "group": "premium",
+    })
+    .to_string();
+
+    let (code, response, db) =
+        get_responce("127.0.0.1:7894", "/users", "POST", body.as_str(), users);
+
+    assert_eq!(code, "201".to_string());
+    assert_eq!(response, "0");
+    assert_eq!(db.db[0], user);
 }
 
 #[test]
@@ -142,6 +180,7 @@ fn test_change_user_name() {
 
     let body = json!({
         "name": "Test",
+        "group": "user",
     })
     .to_string();
 
@@ -149,11 +188,13 @@ fn test_change_user_name() {
 
     assert_eq!(code, "204".to_string());
     assert_eq!(
-        *db.get(0).unwrap(),
+        *db.db.get(0).unwrap(),
         User {
             id: 1,
             name: "Test".to_string(),
-            lastname: "Shutov".to_string()
+            lastname: "Shutov".to_string(),
+            birth_year: 2000,
+            group: crate::UserGroup::User,
         }
     );
 }
@@ -201,78 +242,6 @@ fn test_change_user_name_invalid_body_json() {
 }
 
 #[test]
-fn test_modify_user() {
-    let users = create_users();
-    let body = json!({
-        "name": "test",
-        "lastname": "test1",
-    })
-    .to_string();
-
-    let (code, response, db) =
-        get_responce("127.0.0.1:7888", "/users/1", "PUT", body.as_str(), users);
-
-    let user = User {
-        id: 1,
-        name: "test".to_string(),
-        lastname: "test1".to_string(),
-    };
-
-    assert_eq!(code, "204".to_string());
-    assert_eq!(response, "Modified user".to_string());
-    assert_eq!(*db.get(0).unwrap(), user);
-}
-
-#[test]
-fn test_creates_user() {
-    let users = create_users();
-    let body = json!({
-        "name": "Test",
-        "lastname": "Test1",
-    })
-    .to_string();
-
-    let (code, response, db) =
-        get_responce("127.0.0.1:7889", "/users/3", "PUT", body.as_str(), users);
-
-    let user = User {
-        id: 3,
-        name: "Test".to_string(),
-        lastname: "Test1".to_string(),
-    };
-
-    assert_eq!(code, "204".to_string());
-    assert_eq!(response, "Created new user".to_string());
-    assert_eq!(*db.get(2).unwrap(), user);
-}
-
-#[test]
-fn test_modify_or_create_user_return_error_invalid_json() {
-    let users = create_users();
-    let body = json!({
-        "name1": "Test",
-        "lastname": "Test1",
-    })
-    .to_string();
-
-    let (code, response, _) =
-        get_responce("127.0.0.1:7890", "/users/3", "PUT", body.as_str(), users);
-
-    assert_eq!(code, "400".to_string());
-    assert_eq!(response, "Invalid input".to_string());
-}
-
-#[test]
-fn test_modify_or_create_user_return_error_invalid_body() {
-    let users = create_users();
-
-    let (code, response, _) = get_responce("127.0.0.1:7891", "/users/3", "PUT", "fesfef", users);
-
-    assert_eq!(code, "400".to_string());
-    assert_eq!(response, "Invalid input".to_string());
-}
-
-#[test]
 fn test_delete_user() {
     let users = create_users();
 
@@ -282,11 +251,13 @@ fn test_delete_user() {
         id: 1,
         name: "Hlib".to_string(),
         lastname: "Shutov".to_string(),
+        birth_year: 2000,
+        group: UserGroup::Admin,
     }];
 
     assert_eq!(code, "204".to_string());
     assert_eq!(response, "Removed user".to_string());
-    assert_eq!(db, expected_db);
+    assert_eq!(db.db, expected_db);
 }
 
 #[test]
