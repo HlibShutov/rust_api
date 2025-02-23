@@ -58,13 +58,14 @@ fn handle_connection(mut stream: TcpStream, db: Arc<Mutex<DataBase>>) {
     let mut request_data = request_line.split(" ");
     let method = request_data.next().unwrap();
     let path = request_data.next().unwrap();
+    let controller = UserController::new(db);
 
     let (code, contents) = match (method, path) {
-        ("GET", "/users") => (Some(200), show_users(db)),
+        ("GET", "/users") => (Some(200), controller.show_users()),
         ("GET", path) if path.starts_with("/users/") => {
             let id = path.trim_start_matches("/users/");
             if let Ok(user_id) = id.parse::<u32>() {
-                (Some(200), show_user(db, user_id))
+                (Some(200), controller.show_user(user_id))
             } else {
                 (None, Err(Errors::UserError(400)))
             }
@@ -73,7 +74,7 @@ fn handle_connection(mut stream: TcpStream, db: Arc<Mutex<DataBase>>) {
             println!("{}", data);
             match serde_json::from_str::<HashMap<String, String>>(data.as_str()) {
                 Ok(user) => {
-                    let id = add_user(db, user, None);
+                    let id = controller.add_user(user, None);
                     (Some(201), id)
                 }
                 Err(_) => (None, Err(Errors::UserError(400))),
@@ -83,7 +84,7 @@ fn handle_connection(mut stream: TcpStream, db: Arc<Mutex<DataBase>>) {
             let id = path.trim_start_matches("/users/");
             if let Ok(user_id) = id.parse::<u32>() {
                 match serde_json::from_str::<HashMap<String, String>>(data.as_str()) {
-                    Ok(user) => (Some(204), change_user_data(db, user_id, user)),
+                    Ok(user) => (Some(204), controller.change_user_data(user_id, user)),
                     Err(_) => (None, Err(Errors::UserError(400))),
                 }
             } else {
@@ -93,7 +94,7 @@ fn handle_connection(mut stream: TcpStream, db: Arc<Mutex<DataBase>>) {
         ("DELETE", path) if path.starts_with("/users/") => {
             let id = path.trim_start_matches("/users/");
             if let Ok(user_id) = id.parse::<u32>() {
-                (Some(204), delete_user(db, user_id))
+                (Some(204), controller.delete_user(user_id))
             } else {
                 (None, Err(Errors::UserError(400)))
             }

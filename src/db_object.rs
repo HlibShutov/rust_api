@@ -69,3 +69,100 @@ impl DataBase {
         Ok(&self.db.get(user_id).unwrap())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_users() -> Vec<User> {
+        let user_1 = User {
+            id: 1,
+            name: "Hlib".to_string(),
+            lastname: "Shutov".to_string(),
+            birth_year: 2000,
+            group: crate::UserGroup::Admin,
+        };
+        let user_2 = User {
+            id: 2,
+            name: "Wojciech".to_string(),
+            lastname: "Oczkowski".to_string(),
+            birth_year: 2000,
+            group: crate::UserGroup::User,
+        };
+        vec![user_1, user_2]
+    }
+
+    fn create_database() -> DataBase {
+        DataBase { db: create_users() }
+    }
+
+    fn create_user(id: u32) -> User {
+        User {
+            id,
+            name: "test".to_string(),
+            lastname: "test1".to_string(),
+            birth_year: 2000,
+            group: crate::UserGroup::Premium,
+        }
+    }
+
+    #[test]
+    fn test_add_entry() {
+        let mut database = create_database();
+        database.add_entry(create_user(3), None);
+
+        let mut expected = create_users();
+        expected.push(create_user(3));
+
+        assert_eq!(database.db, expected);
+    }
+
+    #[test]
+    fn test_remove_entry() {
+        let mut database = create_database();
+        database.remove_entry(1).unwrap();
+
+        let mut expected = create_users();
+        expected.remove(0);
+
+        assert_eq!(database.db, expected);
+    }
+
+    #[test]
+    fn test_change_user() {
+        let mut database = create_database();
+        let change_data = vec![
+            UserEnum::Name("test".to_string()),
+            UserEnum::Lastname("test1".to_string()),
+            UserEnum::Group(UserGroup::Premium),
+        ];
+        database.change_user(1, change_data).unwrap();
+
+        assert_eq!(database.db[0], create_user(1));
+    }
+
+    #[test]
+    fn test_get_all() {
+        let database = create_database();
+        assert_eq!(*database.get_all(), create_users());
+    }
+
+    #[test]
+    fn test_get_one() {
+        let database = create_database();
+        let user = User {
+            id: 1,
+            name: "Hlib".to_string(),
+            lastname: "Shutov".to_string(),
+            birth_year: 2000,
+            group: crate::UserGroup::Admin,
+        };
+        assert_eq!(*database.get_one(1).unwrap(), user);
+    }
+
+    #[test]
+    fn test_error_if_id_does_not_exist() {
+        let database = create_database();
+        assert_eq!(database.get_one(0), Err(Errors::UserError(400)));
+    }
+}
