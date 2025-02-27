@@ -1,4 +1,4 @@
-use rust_api::{db_object::DataBase, run_server, User, UserGroup};
+use rust_api::{db_object::DataBase, db_object_enum::DataObjectEnum, run_server, User, UserGroup};
 use serde_json::json;
 use std::{
     io::{Read, Write},
@@ -8,7 +8,7 @@ use std::{
     time::Duration,
 };
 
-fn create_users() -> DataBase {
+fn create_users() -> DataObjectEnum {
     let user_1 = User {
         id: 1,
         name: "Hlib".to_string(),
@@ -23,9 +23,10 @@ fn create_users() -> DataBase {
         birth_year: 2000,
         group: crate::UserGroup::User,
     };
-    DataBase {
+    let db = DataBase {
         db: vec![user_1, user_2],
-    }
+    };
+    DataObjectEnum::DataBase(db)
 }
 
 fn get_responce(
@@ -33,8 +34,8 @@ fn get_responce(
     path: &str,
     method: &str,
     body: &str,
-    db: DataBase,
-) -> (String, String, DataBase) {
+    db: DataObjectEnum,
+) -> (String, String, DataObjectEnum) {
     let db = Arc::new(Mutex::new(db));
     let server_db = Arc::clone(&db);
     thread::spawn(|| {
@@ -70,7 +71,8 @@ fn get_responce(
 
 #[test]
 fn test_empty_users() {
-    let (code, response, _) = get_responce("127.0.0.1:7878", "/users", "GET", "", DataBase::new());
+    let (code, response, _) =
+        get_responce("127.0.0.1:7878", "/users", "GET", "", DataObjectEnum::new());
 
     assert_eq!(code, "200".to_string());
     assert_eq!(response, "[]".to_string());
@@ -79,18 +81,26 @@ fn test_empty_users() {
 #[test]
 fn test_show_users() {
     let users = create_users();
+    let users_db = match users.clone() {
+        DataObjectEnum::DataBase(database) => database,
+        _ => panic!("error"),
+    };
     let (code, response, _) = get_responce("127.0.0.1:7879", "/users", "GET", "", users.clone());
 
     let result: Vec<User> = serde_json::from_str(response.as_str()).unwrap();
 
     assert_eq!(code, "200".to_string());
-    assert_eq!(result, users.db);
+    assert_eq!(result, users_db.db);
 }
 
 #[test]
 fn test_show_user() {
     let users = create_users();
-    let user_1 = users.db[0].clone();
+    let users_db = match users.clone() {
+        DataObjectEnum::DataBase(database) => database,
+        _ => panic!("error"),
+    };
+    let user_1 = users_db.db[0].clone();
 
     let (code, response, _) = get_responce("127.0.0.1:7880", "/users/1", "GET", "", users);
 
@@ -132,14 +142,19 @@ fn test_adding_user() {
     let (code, response, db) =
         get_responce("127.0.0.1:7882", "/users", "POST", body.as_str(), users);
 
+    let users_db = match db {
+        DataObjectEnum::DataBase(database) => database,
+        _ => panic!("error"),
+    };
+
     assert_eq!(code, "201".to_string());
     assert_eq!(response, "3");
-    assert_eq!(db.db[2], user_3);
+    assert_eq!(users_db.db[2], user_3);
 }
 
 #[test]
 fn test_adding_user_to_empty() {
-    let users = DataBase::new();
+    let users = DataObjectEnum::new();
 
     let user = User {
         id: 0,
@@ -159,10 +174,14 @@ fn test_adding_user_to_empty() {
 
     let (code, response, db) =
         get_responce("127.0.0.1:7894", "/users", "POST", body.as_str(), users);
+    let users_db = match db.clone() {
+        DataObjectEnum::DataBase(database) => database,
+        _ => panic!("error"),
+    };
 
     assert_eq!(code, "201".to_string());
     assert_eq!(response, "0");
-    assert_eq!(db.db[0], user);
+    assert_eq!(users_db.db[0], user);
 }
 
 #[test]
@@ -185,10 +204,14 @@ fn test_change_user_name() {
     .to_string();
 
     let (code, _, db) = get_responce("127.0.0.1:7884", "/users/1", "PATCH", body.as_str(), users);
+    let users_db = match db.clone() {
+        DataObjectEnum::DataBase(database) => database,
+        _ => panic!("error"),
+    };
 
     assert_eq!(code, "204".to_string());
     assert_eq!(
-        *db.db.get(0).unwrap(),
+        *users_db.db.get(0).unwrap(),
         User {
             id: 1,
             name: "Test".to_string(),
@@ -246,6 +269,10 @@ fn test_delete_user() {
     let users = create_users();
 
     let (code, response, db) = get_responce("127.0.0.1:7892", "/users/2", "DELETE", "", users);
+    let users_db = match db.clone() {
+        DataObjectEnum::DataBase(database) => database,
+        _ => panic!("error"),
+    };
 
     let expected_db = vec![User {
         id: 1,
@@ -257,7 +284,7 @@ fn test_delete_user() {
 
     assert_eq!(code, "204".to_string());
     assert_eq!(response, "Removed user".to_string());
-    assert_eq!(db.db, expected_db);
+    assert_eq!(users_db.db, expected_db);
 }
 
 #[test]

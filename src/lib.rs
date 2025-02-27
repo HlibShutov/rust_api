@@ -9,14 +9,16 @@ use std::{
     net::{TcpListener, TcpStream},
 };
 
+pub mod db_mock;
 pub mod db_object;
+pub mod db_object_enum;
 mod utils;
-use db_object::DataBase;
+use db_object_enum::DataObjectEnum;
 use utils::*;
 
 use serde::{Deserialize, Serialize};
 
-pub fn run_server(address: &str, db: Arc<Mutex<DataBase>>) {
+pub fn run_server(address: &str, db: Arc<Mutex<DataObjectEnum>>) {
     let listener = TcpListener::bind(address).unwrap();
     let pool = ThreadPool::new(4);
 
@@ -30,7 +32,7 @@ pub fn run_server(address: &str, db: Arc<Mutex<DataBase>>) {
     }
 }
 
-fn handle_connection(mut stream: TcpStream, db: Arc<Mutex<DataBase>>) {
+fn handle_connection(mut stream: TcpStream, db: Arc<Mutex<DataObjectEnum>>) {
     let mut buf_reader = BufReader::new(&stream);
     let mut request = String::new();
 

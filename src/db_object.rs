@@ -5,6 +5,7 @@ pub struct DataBase {
     pub db: Vec<User>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
 pub enum UserEnum {
     Name(String),
     Lastname(String),

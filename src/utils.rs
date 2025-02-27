@@ -3,8 +3,11 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use crate::db_object::DataBase;
-use crate::{db_object::UserEnum, User, UserGroup};
+use crate::{
+    db_object::{DataBase, UserEnum},
+    db_object_enum::DataObjectEnum,
+};
+use crate::{User, UserGroup};
 
 #[derive(Debug, PartialEq)]
 pub enum Errors {
@@ -13,21 +16,21 @@ pub enum Errors {
 }
 
 pub struct UserController {
-    database: Arc<Mutex<DataBase>>,
+    database: Arc<Mutex<DataObjectEnum>>,
 }
 
 impl UserController {
-    pub fn new(database: Arc<Mutex<DataBase>>) -> Self {
+    pub fn new(database: Arc<Mutex<DataObjectEnum>>) -> Self {
         Self { database }
     }
     pub fn show_users(&self) -> Result<String, Errors> {
-        let users = self.database.lock().unwrap();
+        let mut users = self.database.lock().unwrap();
         let json = serde_json::to_string(&*users.get_all()).map_err(|_| Errors::ServerError(500));
         json
     }
 
     pub fn show_user(&self, id: u32) -> Result<String, Errors> {
-        let users = self.database.lock().map_err(|_| Errors::ServerError(500))?;
+        let mut users = self.database.lock().map_err(|_| Errors::ServerError(500))?;
         let user = users.get_one(id)?;
         let json = serde_json::to_string(user).map_err(|_| Errors::ServerError(500));
         json
@@ -113,6 +116,7 @@ impl UserController {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db_mock::{DataBaseMock, MockCalls};
 
     fn create_user(id: u32) -> User {
         User {
@@ -123,7 +127,7 @@ mod tests {
             group: crate::UserGroup::Premium,
         }
     }
-    fn create_db() -> (Vec<User>, Arc<Mutex<DataBase>>) {
+    fn create_db() -> (Vec<User>, Arc<Mutex<DataObjectEnum>>) {
         let user_1 = User {
             id: 1,
             name: "Hlib".to_string(),
@@ -139,29 +143,54 @@ mod tests {
             group: crate::UserGroup::User,
         };
         let users = vec![user_1, user_2];
-        let db = Arc::new(Mutex::new(DataBase { db: users.clone() }));
+        let db = Arc::new(Mutex::new(DataObjectEnum::DataBaseMock(DataBaseMock::new(
+            users.clone(),
+        ))));
 
         (users, db)
     }
-    fn create_controller(db: Arc<Mutex<DataBase>>) -> UserController {
+    fn create_controller(db: Arc<Mutex<DataObjectEnum>>) -> UserController {
         UserController::new(db)
     }
     #[test]
     fn test_show_users() {
-        let (users, db) = create_db();
+        let (_, db) = create_db();
         let controller = create_controller(db);
-        let output = controller.show_users();
-        let result: Vec<User> = serde_json::from_str(output.unwrap().as_str()).unwrap();
-        assert_eq!(result, users);
+        controller.show_users().unwrap();
+
+        let mock = match controller.database.lock().unwrap().to_owned() {
+            DataObjectEnum::DataBaseMock(database_mock) => database_mock,
+            _ => panic!("error"),
+        };
+
+        let call_id = mock
+            .calls
+            .iter()
+            .position(|call| matches!(call, MockCalls::GetAll))
+            .unwrap();
+        let call = mock.calls.get(call_id).unwrap();
+
+        assert_eq!(*call, MockCalls::GetAll);
     }
 
     #[test]
     fn test_show_user() {
-        let (users, db) = create_db();
+        let (_, db) = create_db();
         let controller = create_controller(db);
-        let output = controller.show_user(1);
-        let result: User = serde_json::from_str(output.unwrap().as_str()).unwrap();
-        assert_eq!(result, users[0]);
+        controller.show_user(1).unwrap();
+
+        let mock = match controller.database.lock().unwrap().to_owned() {
+            DataObjectEnum::DataBaseMock(database_mock) => database_mock,
+            _ => panic!("error"),
+        };
+
+        let call_id = mock
+            .calls
+            .iter()
+            .position(|call| matches!(call, MockCalls::GetOne { id: _ }))
+            .unwrap();
+        let call = mock.calls.get(call_id).unwrap();
+        assert_eq!(*call, MockCalls::GetOne { id: 1 });
     }
 
     #[test]
@@ -174,12 +203,30 @@ mod tests {
             ("birth_year".to_string(), "2000".to_string()),
             ("group".to_string(), "premium".to_string()),
         ]);
-        let output = controller.add_user(data, None);
+        controller.add_user(data, None).unwrap();
 
-        let new_users = db.lock().unwrap();
-        let last_user = new_users.db.last().unwrap().clone();
-        assert_eq!(output.unwrap(), "3".to_string());
-        assert_eq!(last_user, create_user(3));
+        let mock = match controller.database.lock().unwrap().to_owned() {
+            DataObjectEnum::DataBaseMock(database_mock) => database_mock,
+            _ => panic!("error"),
+        };
+
+        let call_id = mock
+            .calls
+            .iter()
+            .position(|call| matches!(call, MockCalls::AddEntry { user: _, new_id: _ }))
+            .unwrap();
+        let call = mock.calls.get(call_id).unwrap();
+
+        let user = User {
+            id: 0,
+            name: "test".to_string(),
+            lastname: "test1".to_string(),
+            birth_year: 2000,
+            group: UserGroup::Premium,
+        };
+
+        let expected_call = MockCalls::AddEntry { user, new_id: None };
+        assert_eq!(*call, expected_call);
     }
 
     #[test]
@@ -190,20 +237,27 @@ mod tests {
         let change_data = HashMap::from([("name".to_string(), "test".to_string())]);
         let result = controller.change_user_data(1, change_data);
 
-        let new_users = db.lock().unwrap();
-        let user = new_users.db.get(0).unwrap();
+        let mock = match controller.database.lock().unwrap().to_owned() {
+            DataObjectEnum::DataBaseMock(database_mock) => database_mock,
+            _ => panic!("error"),
+        };
 
+        let call_id = mock
+            .calls
+            .iter()
+            .position(|call| matches!(call, MockCalls::ChangeUser { id: _, data: _ }))
+            .unwrap();
+        let call = mock.calls.get(call_id).unwrap();
+
+        let change_data_enum = vec![UserEnum::Name("test".to_string())];
         assert_eq!(result, Ok("Changed".to_string()));
         assert_eq!(
-            *user,
-            User {
+            *call,
+            MockCalls::ChangeUser {
                 id: 1,
-                name: "test".to_string(),
-                lastname: "Shutov".to_string(),
-                birth_year: 2000,
-                group: crate::UserGroup::Admin,
+                data: change_data_enum
             }
-        );
+        )
     }
 
     #[test]
@@ -217,30 +271,30 @@ mod tests {
         ]);
         let result = controller.change_user_data(1, change_data);
 
-        let new_users = db.lock().unwrap();
-        let user = new_users.db.get(0).unwrap();
+        let mock = match controller.database.lock().unwrap().to_owned() {
+            DataObjectEnum::DataBaseMock(database_mock) => database_mock,
+            _ => panic!("error"),
+        };
 
+        let call_id = mock
+            .calls
+            .iter()
+            .position(|call| matches!(call, MockCalls::ChangeUser { id: _, data: _ }))
+            .unwrap();
+        let call = mock.calls.get(call_id).unwrap();
+
+        let change_data_enum = vec![
+            UserEnum::BirthYear(2009),
+            UserEnum::Group(UserGroup::Premium),
+        ];
         assert_eq!(result, Ok("Changed".to_string()));
         assert_eq!(
-            *user,
-            User {
+            *call,
+            MockCalls::ChangeUser {
                 id: 1,
-                name: "Hlib".to_string(),
-                lastname: "Shutov".to_string(),
-                birth_year: 2009,
-                group: crate::UserGroup::Premium,
+                data: change_data_enum
             }
-        );
-    }
-
-    #[test]
-    fn test_returns_error_if_not_exists() {
-        let (_, db) = create_db();
-        let controller = create_controller(db);
-        let change_data = HashMap::from([("lastname".to_string(), "test1".to_string())]);
-        let output = controller.change_user_data(5, change_data);
-
-        assert_eq!(output, Err(Errors::UserError(400)));
+        )
     }
 
     #[test]
@@ -249,18 +303,19 @@ mod tests {
         let controller = create_controller(db.clone());
         let result = controller.delete_user(2);
 
-        let users = &db.lock().unwrap().db;
+        let mock = match controller.database.lock().unwrap().to_owned() {
+            DataObjectEnum::DataBaseMock(database_mock) => database_mock,
+            _ => panic!("error"),
+        };
+
+        let call_id = mock
+            .calls
+            .iter()
+            .position(|call| matches!(call, MockCalls::RemoveEntry { id: _ }))
+            .unwrap();
+        let call = mock.calls.get(call_id).unwrap();
 
         assert_eq!(result, Ok("Removed user".to_string()));
-        assert_eq!(
-            *users,
-            vec!(User {
-                id: 1,
-                name: "Hlib".to_string(),
-                lastname: "Shutov".to_string(),
-                birth_year: 2000,
-                group: crate::UserGroup::Admin,
-            })
-        );
+        assert_eq!(*call, MockCalls::RemoveEntry { id: 2 })
     }
 }
